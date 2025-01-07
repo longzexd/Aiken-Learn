@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cardano Wallet Connection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #balance {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        #balance ul {
+            margin: 0;
+        }
+        #balance li {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        #balance li:last-child {
+            border-bottom: none;
+        }
+        #walletStatus {
+            color: red;
+            margin: 10px 0;
+        }
+        .nft-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .nft-card {
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .nft-image {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        .nft-info {
+            margin-top: 10px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-content {
+            position: relative;
+            margin: auto;
+            padding: 20px;
+            max-width: 90%;
+            max-height: 90%;
+            top: 50%;
+            transform: translateY(-50%);
+            text-align: center;
+        }
+
+        .modal-image {
+            max-width: 100%;
+            max-height: 80vh;
+            object-fit: contain;
+        }
+
+        .close-button {
+            position: absolute;
+            top: -30px;
+            right: 0;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .nft-card {
+            transition: transform 0.2s;
+            cursor: pointer;
+        }
+
+        .nft-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .nft-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 4px;
+            transition: opacity 0.2s;
+        }
+
+        .nft-card:hover .nft-image {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <h1>Cardano Wallet Connection</h1>
+    <div id="walletStatus"></div>
+    <button id="connectWallet">Connect Wallet</button>
+    <button id="checkBalance">Check Balance</button>
+    <button id="getNFTs">Get NFTs</button>
+    <div id="balance"></div>
+    <div id="nftContainer" class="nft-container"></div>
+
+    <script>
+        let walletAPI = null;
+        const statusDiv = document.getElementById('walletStatus');
+
+        // 等待钱包加载
+        function waitForWallet(callback, maxAttempts = 10) {
+            let attempts = 0;
+            
+            const checkWallet = () => {
+                attempts++;
+                console.log(`Checking for wallet... Attempt ${attempts}`);
+                
+                if (window.cardano) {
+                    console.log('Cardano object found:', window.cardano);
+                    callback();
+                    return;
+                }
+                
+                if (attempts < maxAttempts) {
+                    setTimeout(checkWallet, 1000);
+                } else {
+                    console.log('Max attempts reached. Wallet not found.');
+                    statusDiv.textContent = 'Wallet not detected. Please install Nami wallet and refresh the page.';
+                }
+            };
+            
+            checkWallet();
+        }
+
+        // 检查钱包是否可用
+        function checkWalletAvailable() {
+            console.log('Checking wallet availability...');
+            
+            if (typeof window.cardano === 'undefined') {
+                console.log('window.cardano is undefined');
+                statusDiv.textContent = 'No Cardano wallet detected. Please install a wallet (like Nami, Eternl, or Flint).';
+                return false;
+            }
+
+            console.log('Available cardano object properties:', Object.keys(window.cardano));
+            
+            // 检查可用的钱包
+            const wallets = [];
+            if (window.cardano.nami) {
+                console.log('Nami wallet detected');
+                wallets.push('Nami');
+            }
+            if (window.cardano.eternl) wallets.push('Eternl');
+            if (window.cardano.flint) wallets.push('Flint');
+            
+            if (wallets.length === 0) {
+                statusDiv.textContent = 'No supported wallet found. Please install a Cardano wallet.';
+                return false;
+            }
+            
+            statusDiv.textContent = `Available wallets: ${wallets.join(', ')}`;
+            return true;
+        }
+
+        // 页面加载完成后开始等待钱包
+        window.addEventListener('load', () => {
+            console.log('Page fully loaded, waiting for wallet...');
+            waitForWallet(checkWalletAvailable);
+        });
+
+        document.getElementById('connectWallet').addEventListener('click', async () => {
+            console.log('Attempting to connect wallet...');
+            
+            // 如果钱包对象还没加载，等待它
+            if (!window.cardano) {
+                waitForWallet(async () => {
+                    await connectWallet();
+                });
+                return;
+            }
+
+            await connectWallet();
+        });
+
+        async function connectWallet() {
+            try {
+                if (window.cardano && window.cardano.nami) {
+                    console.log('Enabling Nami wallet...');
+                    walletAPI = await window.cardano.nami.enable();
+                    console.log('Wallet API:', walletAPI);
+                    statusDiv.style.color = 'green';
+                    statusDiv.textContent = 'Wallet connected successfully!';
+                } else {
+                    console.log('Nami wallet not found');
+                    statusDiv.style.color = 'red';
+                    statusDiv.textContent = 'Nami wallet not found. Please make sure it is installed and refresh the page.';
+                }
+            } catch (error) {
+                console.error('Error connecting wallet:', error);
+                statusDiv.style.color = 'red';
+                statusDiv.textContent = `Failed to connect wallet: ${error.message}`;
+            }
+        }
+
+        document.getElementById('checkBalance').addEventListener('click', async () => {
+            if (!walletAPI) {
+                statusDiv.textContent = 'Please connect your wallet first!';
+                return;
+            }
+
+            try {
+                console.log('Fetching balance...');
+                const balance = await walletAPI.getBalance();
+                console.log('Raw balance:', balance);
+
+                // 处理 CBOR 编码的余额
+                if (typeof balance === 'string') {
+                    // 解析 CBOR 格式的余额
+                    const lovelaceHex = balance.substring(4, 20); // 提取 Lovelace 部分
+                    console.log('Lovelace hex:', lovelaceHex);
+                    
+                    try {
+                        // 将十六进制转换为 BigInt
+                        const lovelaceAmount = BigInt('0x' + lovelaceHex);
+                        console.log('Lovelace amount:', lovelaceAmount.toString());
+                        
+                        // 转换为 ADA (1 ADA = 1,000,000 Lovelace)
+                        const adaAmount = Number(lovelaceAmount) / 1_000_000;
+                        console.log('ADA amount:', adaAmount);
+
+                        // 创建余额显示容器
+                        const balanceContainer = document.getElementById('balance');
+                        balanceContainer.innerHTML = `
+                            <div style="margin-bottom: 10px">
+                                <strong>ADA Balance:</strong> ${adaAmount.toFixed(6)} ADA
+                            </div>
+                        `;
+
+                        // 解析其他资产信息
+                        const assetsHex = balance.substring(20);
+                        console.log('Assets hex:', assetsHex);
+
+                        // 如果有其他资产，创建资产列表
+                        if (assetsHex) {
+                            const assetsContainer = document.createElement('div');
+                            assetsContainer.innerHTML = '<strong>Other Assets:</strong>';
+                            const assetsList = document.createElement('ul');
+                            assetsList.style.listStyle = 'none';
+                            assetsList.style.padding = '10px 0';
+
+                            // 这里可以添加资产解析逻辑
+                            // 示例显示 NFT 数量
+                            const nftCount = (assetsHex.match(/4455464f/g) || []).length;
+                            if (nftCount > 0) {
+                                const nftItem = document.createElement('li');
+                                nftItem.textContent = `NFTs: ${nftCount} tokens`;
+                                assetsList.appendChild(nftItem);
+                            }
+
+                            assetsContainer.appendChild(assetsList);
+                            balanceContainer.appendChild(assetsContainer);
+                        }
+                    } catch (convError) {
+                        console.error('Error converting balance:', convError);
+                        document.getElementById('balance').textContent = 'Error converting balance format';
+                    }
+                } else if (typeof balance === 'object') {
+                    // 处理对象格式的余额
+                    console.log('Balance object:', balance);
+                    if (balance.lovelace) {
+                        const adaAmount = Number(balance.lovelace) / 1_000_000;
+                        document.getElementById('balance').textContent = `Balance: ${adaAmount.toFixed(6)} ADA`;
+                    } else {
+                        document.getElementById('balance').textContent = 'Unable to find Lovelace balance';
+                    }
+                } else {
+                    console.log('Unknown balance type:', typeof balance);
+                    document.getElementById('balance').textContent = 'Unable to parse balance';
+                }
+            } catch (error) {
+                console.error('Error checking balance:', error);
+                statusDiv.style.color = 'red';
+                statusDiv.textContent = `Failed to check balance: ${error.message}`;
+            }
+        });
+
+        // 修改 Maestro API 相关代码
+        const MAESTRO_API_KEY = 'PEqF2aSHVAPhRwFg42mN4IBlWB756Fnu';
+        const MAESTRO_API_BASE = 'https://preview.gomaestro-api.org/v1';
+
+        async function fetchNFTs(address) {
+            try {
+                console.log('Original address:', address);
+                
+                const utxoUrl = new URL(`${MAESTRO_API_BASE}/addresses/${address}/utxos`);
+                console.log('UTXOs URL:', utxoUrl.toString());
+
+                const utxoResponse = await fetch(utxoUrl.toString(), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'api-key': MAESTRO_API_KEY
+                    }
+                });
+
+                if (!utxoResponse.ok) {
+                    const errorText = await utxoResponse.text();
+                    console.error('UTXOs API Error:', errorText);
+                    throw new Error(`Failed to fetch UTXOs: ${utxoResponse.status}`);
+                }
+
+                const utxoData = await utxoResponse.json();
+                console.log('UTXOs data:', utxoData);
+
+                // 从 UTXOs 中提取所有 NFTs
+                const nfts = [];
+                if (utxoData.data && Array.isArray(utxoData.data)) {
+                    for (const utxo of utxoData.data) {
+                        console.log('Processing UTXO:', utxo);
+                        if (utxo.assets && Array.isArray(utxo.assets)) {
+                            for (const asset of utxo.assets) {
+                                console.log('Processing asset:', asset);
+                                // 检查是否是 NFT（非 lovelace 且数量为 1）
+                                if (asset.unit !== 'lovelace' && asset.amount === 1) {
+                                    // 从 unit 中提取 policy_id 和 asset_name
+                                    const policyId = asset.unit.substring(0, 56);
+                                    const assetName = asset.unit.substring(56);
+                                    
+                                    // 检查是否是我们的 NFT
+                                    if (policyId === '4dfe935fff1da11de30dc2252fe35693ca92f307c9f9b6ca5b6f63e5') {
+                                        console.log('Found NFT:', {
+                                            policy_id: policyId,
+                                            asset_name: assetName,
+                                            unit: asset.unit,
+                                            amount: asset.amount
+                                        });
+                                        
+                                        // 检查是否已经添加过这个 NFT
+                                        const isDuplicate = nfts.some(nft => nft.unit === asset.unit);
+                                        if (!isDuplicate) {
+                                            nfts.push({
+                                                policy_id: policyId,
+                                                asset_name: assetName,
+                                                unit: asset.unit,
+                                                quantity: asset.amount.toString()
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                console.log('Found NFTs:', nfts);
+
+                // 获取每个 NFT 的详细信息
+                const nftsWithDetails = await Promise.all(nfts.map(async (nft) => {
+                    try {
+                        const detailUrl = new URL(`${MAESTRO_API_BASE}/assets/${nft.unit}`);
+                        console.log('Fetching NFT details:', detailUrl.toString());
+                        
+                        const detailResponse = await fetch(detailUrl.toString(), {
+                            method: 'GET',
+                            headers: {
+                                'Accept': 'application/json',
+                                'api-key': MAESTRO_API_KEY
+                            }
+                        });
+                        
+                        if (detailResponse.ok) {
+                            const detail = await detailResponse.json();
+                            console.log('NFT detail:', detail);
+                            return { 
+                                ...nft, 
+                                metadata: detail.metadata,
+                                onchain_metadata: detail.onchain_metadata,
+                                name: decodeAssetName(nft.asset_name)
+                            };
+                        }
+                        return {
+                            ...nft,
+                            name: decodeAssetName(nft.asset_name)
+                        };
+                    } catch (error) {
+                        console.error('Error fetching NFT details:', error);
+                        return {
+                            ...nft,
+                            name: decodeAssetName(nft.asset_name)
+                        };
+                    }
+                }));
+
+                console.log('NFTs with details:', nftsWithDetails);
+                return { assets: nftsWithDetails };
+            } catch (error) {
+                console.error('Error fetching NFTs:', error);
+                throw error;
+            }
+        }
+
+        document.getElementById('getNFTs').addEventListener('click', async () => {
+            if (!walletAPI) {
+                statusDiv.textContent = 'Please connect your wallet first!';
+                return;
+            }
+
+            try {
+                statusDiv.textContent = 'Fetching NFTs...';
+                
+                // 获取网络 ID
+                const networkId = await walletAPI.getNetworkId();
+                console.log('Network ID:', networkId);
+
+                // 获取当前使用的地址
+                const addresses = await walletAPI.getUsedAddresses();
+                console.log('Used addresses:', addresses);
+
+                if (!addresses || addresses.length === 0) {
+                    throw new Error('No addresses found');
+                }
+
+                // 使用第一个地址
+                const address = addresses[0];
+                console.log('Using address:', address);
+
+                // 获取 NFTs
+                const nfts = await fetchNFTs(address);
+                console.log('NFTs found:', nfts);
+
+                if (nfts && nfts.assets && nfts.assets.length > 0) {
+                    displayNFTs(nfts.assets);
+                    statusDiv.textContent = `Found ${nfts.assets.length} NFTs`;
+                    statusDiv.style.color = 'green';
+                } else {
+                    statusDiv.textContent = 'No NFTs found';
+                    statusDiv.style.color = 'blue';
+                    document.getElementById('nftContainer').innerHTML = '<p>No Collectibles found in this wallet.</p>';
+                }
+
+            } catch (error) {
+                console.error('Error getting NFTs:', error);
+                statusDiv.style.color = 'red';
+                statusDiv.textContent = `Failed to get NFTs: ${error.message}`;
+            }
+        });
+
+        // 添加默认图片的 base64 编码
+        const DEFAULT_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiNFNUU3RUIiLz48cGF0aCBkPSJNODAgOTBIMTIwVjExMEg4MFY5MFoiIGZpbGw9IiM5Q0EzQUYiLz48cGF0aCBkPSJNNjUgNjVIMTM1Vjg1SDY1VjY1WiIgZmlsbD0iIzlDQTNBRiIvPjx0ZXh0IHg9IjEwMCIgeT0iMTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM0QjU1NjMiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';
+
+        function displayNFTs(assets) {
+            const container = document.getElementById('nftContainer');
+            container.innerHTML = '';
+
+            // 创建模态框
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <span class="close-button">&times;</span>
+                    <img class="modal-image" src="" alt="NFT Preview">
+                    <div class="modal-info"></div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // 关闭模态框的点击事件
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal || e.target.className === 'close-button') {
+                    modal.style.display = 'none';
+                }
+            });
+
+            if (assets.length === 0) {
+                container.innerHTML = '<p>No Collectibles found in this wallet.</p>';
+                return;
+            }
+
+            assets.forEach(asset => {
+                const card = document.createElement('div');
+                card.className = 'nft-card';
+
+                // 获取图片 URL
+                const imageUrl = asset.onchain_metadata?.image || 
+                               asset.metadata?.image || 
+                               asset.onchain_metadata?.files?.[0]?.src ||
+                               DEFAULT_IMAGE; // 使用 base64 默认图片
+
+                // 创建图片容器
+                const imageContainer = document.createElement('div');
+                imageContainer.className = 'nft-image-container';
+
+                const image = document.createElement('img');
+                image.className = 'nft-image';
+                image.src = imageUrl;
+                image.alt = asset.onchain_metadata?.name || asset.metadata?.name || 'NFT';
+                image.loading = 'lazy'; // 添加延迟加载
+
+                // 添加图片加载错误处理
+                image.onerror = () => {
+                    image.src = DEFAULT_IMAGE;
+                    image.alt = 'Image not available';
+                };
+
+                imageContainer.appendChild(image);
+                card.appendChild(imageContainer);
+
+                const info = document.createElement('div');
+                info.className = 'nft-info';
+
+                const displayName = asset.onchain_metadata?.name || 
+                                  asset.metadata?.name || 
+                                  decodeAssetName(asset.asset_name) || 
+                                  'Unnamed Asset';
+
+                info.innerHTML = `
+                    <h3>${displayName}</h3>
+                    <p>Asset Name: ${asset.asset_name || 'N/A'}</p>
+                    <p>Policy ID: ${asset.policy_id || 'N/A'}</p>
+                    <p>Quantity: ${asset.quantity || 'N/A'}</p>
+                    ${asset.onchain_metadata?.description || asset.metadata?.description ? 
+                        `<p>Description: ${asset.onchain_metadata?.description || asset.metadata?.description}</p>` : ''}
+                `;
+
+                card.appendChild(info);
+
+                // 添加点击事件打开预览
+                card.addEventListener('click', () => {
+                    const modalImage = modal.querySelector('.modal-image');
+                    const modalInfo = modal.querySelector('.modal-info');
+                    
+                    modalImage.src = imageUrl;
+                    modalImage.onerror = () => {
+                        modalImage.src = DEFAULT_IMAGE;
+                        modalImage.alt = 'Image not available';
+                    };
+
+                    modalInfo.innerHTML = `
+                        <h2>${displayName}</h2>
+                        ${asset.onchain_metadata?.description || asset.metadata?.description ? 
+                            `<p>${asset.onchain_metadata?.description || asset.metadata?.description}</p>` : ''}
+                        <p><strong>Policy ID:</strong> ${asset.policy_id}</p>
+                        <p><strong>Asset Name:</strong> ${asset.asset_name}</p>
+                        ${asset.onchain_metadata?.attributes ? `
+                            <div class="attributes">
+                                <h3>Attributes</h3>
+                                ${Object.entries(asset.onchain_metadata.attributes)
+                                    .map(([key, value]) => `<p><strong>${key}:</strong> ${value}</p>`)
+                                    .join('')}
+                            </div>
+                        ` : ''}
+                    `;
+                    
+                    modal.style.display = 'block';
+                });
+
+                container.appendChild(card);
+            });
+        }
+
+        // 辅助函数：解码资产名称
+        function decodeAssetName(assetName) {
+            if (!assetName) return null;
+            try {
+                if (assetName.match(/^[0-9a-fA-F]+$/)) {
+                    return hexToUtf8(assetName);
+                }
+                return assetName;
+            } catch (e) {
+                console.error('Error decoding asset name:', e);
+                return assetName;
+            }
+        }
+
+        // 辅助函数：十六进制转 UTF-8
+        function hexToUtf8(hex) {
+            const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            return new TextDecoder().decode(bytes);
+        }
+    </script>
+</body>
+</html> 
